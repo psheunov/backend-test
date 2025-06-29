@@ -1,25 +1,24 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace Raketa\BackendTestTask\Repository;
 
-use Doctrine\DBAL\Connection;
 use Raketa\BackendTestTask\Repository\Entity\Product;
+use Doctrine\DBAL\Connection;
 
-class ProductRepository
+
+class ProductRepository implements ProductRepositoryInterface
 {
-    private Connection $connection;
-
-    public function __construct(Connection $connection)
+    public function __construct(private Connection $connection)
     {
-        $this->connection = $connection;
     }
 
     public function getByUuid(string $uuid): Product
     {
-        $row = $this->connection->fetchOne(
-            "SELECT * FROM products WHERE uuid = " . $uuid,
+        $row = $this->connection->fetchAssociative(
+            'SELECT * FROM products WHERE uuid = :uuid',
+            ['uuid' => $uuid]
         );
 
         if (empty($row)) {
@@ -29,17 +28,41 @@ class ProductRepository
         return $this->make($row);
     }
 
+    /**
+     * @param array $uuids
+     * @return Product[]
+     */
+    public function getByUuids(array $uuids): array
+    {
+        $result = [];
+        $rows = $this->connection->fetchOne(
+            "SELECT * FROM products WHERE uuid IN($uuids)",
+        );
+
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT * FROM products WHERE uuid IN (:uuids)',
+            ['uuids' => $uuids]
+        );
+
+        foreach ($rows as $row) {
+            $result[] = $this->make($row);
+        }
+
+        return $result;
+    }
+
     public function getByCategory(string $category): array
     {
         return array_map(
-            static fn (array $row): Product => $this->make($row),
+            fn(array $row): Product => $this->createProductFromRow($row),
             $this->connection->fetchAllAssociative(
-                "SELECT id FROM products WHERE is_active = 1 AND category = " . $category,
+                'SELECT * FROM products WHERE is_active = 1 AND category = :category',
+                ['category' => $category]
             )
         );
     }
 
-    public function make(array $row): Product
+    private function make(array $row): Product
     {
         return new Product(
             $row['id'],
